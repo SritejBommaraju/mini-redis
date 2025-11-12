@@ -1,0 +1,3 @@
+C:/Users/bomma/mini-redis/build/CMakeFiles/mini_redis.dir
+C:/Users/bomma/mini-redis/build/CMakeFiles/edit_cache.dir
+C:/Users/bomma/mini-redis/build/CMakeFiles/rebuild_cache.dir
