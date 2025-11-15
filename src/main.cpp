@@ -1,9 +1,7 @@
-#include <iostream>
-
-int start_server(int port); // forward declaration
+#include "server/tcp_server.hpp"
 
 int main() {
-    std::cout << "Mini-Redis server starting..." << std::endl;
-    start_server(6379);
-    return 0;
+    // For now we always listen on 6379.
+    // Later we can add CLI args like: mini_redis --port 6380
+    return mini_redis::start_server(6379);
 }

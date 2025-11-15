@@ -1,24 +1,24 @@
-#include <unordered_map>
-#include <mutex>
-#include <string>
+#include "storage/kv_store.hpp"
 
-class KeyValueStore {
-private:
-    std::unordered_map<std::string, std::string> store;
-    std::mutex mtx;
+namespace mini_redis {
 
-public:
-    std::string set(const std::string& key, const std::string& value) {
-        std::lock_guard<std::mutex> lock(mtx);
-        store[key] = value;
-        return "+OK\r\n";
+void KvStore::set(const std::string& key, const std::string& value) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    data_[key] = value;
+}
+
+std::string KvStore::get(const std::string& key) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = data_.find(key);
+    if (it == data_.end()) {
+        return ""; // key not found
     }
+    return it->second;
+}
 
-    std::string get(const std::string& key) {
-        std::lock_guard<std::mutex> lock(mtx);
-        if (store.find(key) != store.end()) {
-            return "$" + std::to_string(store[key].size()) + "\r\n" + store[key] + "\r\n";
-        }
-        return "$-1\r\n"; // Redis null response
-    }
-};
+bool KvStore::del(const std::string& key) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return data_.erase(key) > 0;
+}
+
+} // namespace mini_redis

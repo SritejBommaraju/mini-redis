@@ -1,69 +1,112 @@
-#include <iostream>
-#include <thread>
-#include <vector>
-#include <sstream>
+#include "server/tcp_server.hpp"
+#include "utils/logger.hpp"
+
 #include <string>
+#include <thread>
+
+#ifdef _WIN32
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include <winsock2.h>
-#include "../storage/kv_store.cpp"
+#include <ws2tcpip.h>
 #pragma comment(lib, "ws2_32.lib")
+#else
+#error "This implementation currently supports only Windows (Winsock)."
+#endif
 
-KeyValueStore kv; // global instance
+namespace mini_redis {
 
-std::vector<std::string> split(const std::string& s) {
-    std::istringstream iss(s);
-    std::vector<std::string> tokens;
-    std::string token;
-    while (iss >> token) tokens.push_back(token);
-    return tokens;
-}
+namespace {
 
 void handle_client(SOCKET client_socket) {
+    Logger::log(Logger::Level::Info, "Client connected");
+
     char buffer[1024];
+
     while (true) {
-        int bytes = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
-        if (bytes <= 0) break;
+        int bytes = recv(client_socket, buffer, static_cast<int>(sizeof(buffer) - 1), 0);
+        if (bytes <= 0) {
+            break; // client closed or error
+        }
 
         buffer[bytes] = '\0';
         std::string input(buffer);
-        auto parts = split(input);
 
-        std::string response;
-        if (parts.size() >= 3 && parts[0] == "SET") {
-            response = kv.set(parts[1], parts[2]);
-        } else if (parts.size() >= 2 && parts[0] == "GET") {
-            response = kv.get(parts[1]);
-        } else {
-            response = "-ERR unknown command\r\n";
-        }
+        // For now: log the raw input and always reply +OK
+        Logger::log(Logger::Level::Info, "Received: " + input);
 
-        send(client_socket, response.c_str(), response.size(), 0);
+        const char* reply = "+OK\r\n";
+        send(client_socket, reply, static_cast<int>(strlen(reply)), 0);
     }
 
+    Logger::log(Logger::Level::Info, "Client disconnected");
     closesocket(client_socket);
 }
 
-int start_server(int port) {
+bool init_winsock() {
     WSADATA wsaData;
-    WSAStartup(MAKEWORD(2, 2), &wsaData);
+    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (result != 0) {
+        Logger::log(Logger::Level::Error, "WSAStartup failed with error " + std::to_string(result));
+        return false;
+    }
+    return true;
+}
 
-    SOCKET server_socket = socket(AF_INET, SOCK_STREAM, 0);
+} // anonymous namespace
 
-    sockaddr_in server_addr;
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(port);
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-
-    bind(server_socket, (sockaddr*)&server_addr, sizeof(server_addr));
-    listen(server_socket, SOMAXCONN);
-
-    std::cout << "Listening on port " << port << "..." << std::endl;
-
-    while (true) {
-        SOCKET client_socket = accept(server_socket, nullptr, nullptr);
-        std::thread(handle_client, client_socket).detach();
+int start_server(int port) {
+    if (!init_winsock()) {
+        return 1;
     }
 
-    closesocket(server_socket);
+    SOCKET listen_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (listen_socket == INVALID_SOCKET) {
+        Logger::log(Logger::Level::Error, "socket() failed");
+        WSACleanup();
+        return 1;
+    }
+
+    // Allow quick restart on the same port
+    char yes = 1;
+    setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+
+    sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(static_cast<u_short>(port));
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    if (bind(listen_socket, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
+        Logger::log(Logger::Level::Error, "bind() failed");
+        closesocket(listen_socket);
+        WSACleanup();
+        return 1;
+    }
+
+    if (listen(listen_socket, SOMAXCONN) == SOCKET_ERROR) {
+        Logger::log(Logger::Level::Error, "listen() failed");
+        closesocket(listen_socket);
+        WSACleanup();
+        return 1;
+    }
+
+    Logger::log(Logger::Level::Info, "Mini-Redis server starting...");
+    Logger::log(Logger::Level::Info, "Listening on port " + std::to_string(port));
+
+    while (true) {
+        SOCKET client_socket = accept(listen_socket, nullptr, nullptr);
+        if (client_socket == INVALID_SOCKET) {
+            Logger::log(Logger::Level::Error, "accept() failed");
+            continue;
+        }
+
+        std::thread t(handle_client, client_socket);
+        t.detach();
+    }
+
+    // Currently unreachable, but kept for completeness
+    closesocket(listen_socket);
     WSACleanup();
     return 0;
 }
+
+} // namespace mini_redis
