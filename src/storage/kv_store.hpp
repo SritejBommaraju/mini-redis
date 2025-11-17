@@ -4,22 +4,14 @@
 #include <unordered_map>
 #include <mutex>
 
-namespace mini_redis {
-
-class KvStore {
+class KVStore {
 public:
-    // Stores key → value
+    KVStore() = default;
+
     void set(const std::string& key, const std::string& value);
-
-    // Returns value; empty string if key not found
-    std::string get(const std::string& key);
-
-    // Returns true if key existed and was removed
-    bool del(const std::string& key);
+    bool get(const std::string& key, std::string& outValue);
 
 private:
-    std::unordered_map<std::string, std::string> data_;
+    std::unordered_map<std::string, std::string> store_;
     std::mutex mutex_;
 };
-
-} // namespace mini_redis

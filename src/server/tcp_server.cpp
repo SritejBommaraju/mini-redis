@@ -1,6 +1,9 @@
 #include "server/tcp_server.hpp"
 #include "utils/logger.hpp"
 
+#include "../protocol/parser.hpp"
+#include "../storage/kv_store.hpp"
+
 #include <string>
 #include <thread>
 
@@ -17,6 +20,26 @@ namespace mini_redis {
 
 namespace {
 
+// RESP helpers
+std::string resp_simple(const std::string &msg) {
+    return "+" + msg + "\r\n";
+}
+
+std::string resp_bulk(const std::string &msg) {
+    return "$" + std::to_string(msg.size()) + "\r\n" + msg + "\r\n";
+}
+
+std::string resp_nil() {
+    return "$-1\r\n";
+}
+
+std::string resp_err(const std::string &msg) {
+    return "-" + msg + "\r\n";
+}
+
+// Shared key-value store for all clients
+KVStore kv;
+
 void handle_client(SOCKET client_socket) {
     Logger::log(Logger::Level::Info, "Client connected");
 
@@ -25,17 +48,56 @@ void handle_client(SOCKET client_socket) {
     while (true) {
         int bytes = recv(client_socket, buffer, static_cast<int>(sizeof(buffer) - 1), 0);
         if (bytes <= 0) {
-            break; // client closed or error
+            break;
         }
 
         buffer[bytes] = '\0';
         std::string input(buffer);
 
-        // For now: log the raw input and always reply +OK
         Logger::log(Logger::Level::Info, "Received: " + input);
 
-        const char* reply = "+OK\r\n";
-        send(client_socket, reply, static_cast<int>(strlen(reply)), 0);
+        protocol::Command cmd = protocol::parse_command(input);
+        std::string reply;
+
+        switch (cmd.type) {
+            case protocol::CommandType::PING:
+                reply = resp_simple("PONG");
+                break;
+
+            case protocol::CommandType::ECHO:
+                if (cmd.args.empty())
+                    reply = resp_err("ECHO requires a message");
+                else
+                    reply = resp_bulk(cmd.args[0]);
+                break;
+
+            case protocol::CommandType::SET:
+                if (cmd.args.size() < 2)
+                    reply = resp_err("SET requires key and value");
+                else {
+                    kv.set(cmd.args[0], cmd.args[1]);
+                    reply = resp_simple("OK");
+                }
+                break;
+
+            case protocol::CommandType::GET:
+                if (cmd.args.empty())
+                    reply = resp_err("GET requires a key");
+                else {
+                    std::string value;
+                    if (kv.get(cmd.args[0], value))
+                        reply = resp_bulk(value);
+                    else
+                        reply = resp_nil();
+                }
+                break;
+
+            default:
+                reply = resp_err("Unknown command");
+                break;
+        }
+
+        send(client_socket, reply.c_str(), static_cast<int>(reply.size()), 0);
     }
 
     Logger::log(Logger::Level::Info, "Client disconnected");
@@ -66,7 +128,6 @@ int start_server(int port) {
         return 1;
     }
 
-    // Allow quick restart on the same port
     char yes = 1;
     setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 
@@ -89,8 +150,7 @@ int start_server(int port) {
         return 1;
     }
 
-    Logger::log(Logger::Level::Info, "Mini-Redis server starting...");
-    Logger::log(Logger::Level::Info, "Listening on port " + std::to_string(port));
+    Logger::log(Logger::Level::Info, "Mini-Redis running on port " + std::to_string(port));
 
     while (true) {
         SOCKET client_socket = accept(listen_socket, nullptr, nullptr);
@@ -103,7 +163,6 @@ int start_server(int port) {
         t.detach();
     }
 
-    // Currently unreachable, but kept for completeness
     closesocket(listen_socket);
     WSACleanup();
     return 0;
