@@ -1,3 +1,6 @@
+// Logging utility for Mini-Redis
+// Provides thread-safe logging with different severity levels
+
 #pragma once
 
 #include <iostream>
@@ -11,6 +14,7 @@ public:
     enum class Level { Info, Warn, Error };
 
     static void log(Level level, const std::string& msg) {
+#ifdef DEBUG_LOGGING
         static std::mutex m;
         std::lock_guard<std::mutex> lock(m);
 
@@ -22,6 +26,15 @@ public:
         }
 
         std::cout << prefix << msg << std::endl;
+#else
+        // In release mode, only log errors and warnings
+        if (level == Level::Error || level == Level::Warn) {
+            static std::mutex m;
+            std::lock_guard<std::mutex> lock(m);
+            const char* prefix = (level == Level::Error) ? "[ERROR] " : "[WARN]  ";
+            std::cout << prefix << msg << std::endl;
+        }
+#endif
     }
 };
 

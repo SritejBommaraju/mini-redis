@@ -1,3 +1,6 @@
+// RESP protocol parser for Mini-Redis
+// Parses client commands and converts them to structured Command objects
+
 #pragma once
 
 #include <string>
@@ -10,7 +13,22 @@ namespace protocol {
         PING,
         ECHO,
         SET,
-        GET
+        GET,
+        DEL,
+        EXISTS,
+        KEYS,
+        EXPIRE,
+        TTL,
+        MGET,
+        QUIT,
+        SAVE,
+        LOAD,
+        SELECT,
+        INFO,
+        SUBSCRIBE,
+        PUBLISH,
+        EVAL,
+        AUTH
     };
 
     struct Command {
