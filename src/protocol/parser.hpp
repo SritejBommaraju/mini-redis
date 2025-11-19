@@ -37,5 +37,9 @@ namespace protocol {
     };
 
     Command parse_command(const std::string& line);
+    
+    // Convert RESP array (from RESP parser) to Command struct
+    // First element is command name (uppercase), rest are arguments
+    Command command_from_resp_array(const std::vector<std::string>& args);
 
 }

@@ -17,6 +17,7 @@
 #include "utils/logger.hpp"
 
 #include "../protocol/parser.hpp"
+#include "../protocol/resp_parser.hpp"
 #include "../storage/kv_store.hpp"
 #include "../storage/aof_logger.hpp"
 #include "replication.hpp"
@@ -37,7 +38,7 @@
 namespace mini_redis {
 
 // Forward declarations for shared functions from tcp_server.cpp
-std::vector<std::string> extract_commands(std::string& buffer);
+std::vector<std::vector<std::string>> extract_resp_commands(RespParser* parser, std::string* error_msg = nullptr);
 mini_redis::detail::CommandResult process_command(const protocol::Command& cmd, mini_redis::detail::ClientContext& ctx, SOCKET client_socket);
 KVStore& get_db(mini_redis::detail::ClientContext& ctx);
 
@@ -314,15 +315,45 @@ DWORD WINAPI worker_thread(LPVOID param) {
                     continue;
                 }
                 
-                // Append received data to buffer
-                client_ctx->ctx.read_buffer.append(client_ctx->read_buffer, bytes_transferred);
+                // Append received data to parser
+                // Note: client_ctx->read_buffer is the raw socket buffer (char[4096])
+                // Parser maintains its own buffer and handles binary data correctly
+                if (client_ctx->ctx.parser) {
+                    client_ctx->ctx.parser->append(client_ctx->read_buffer, bytes_transferred);
+                }
                 
-                // Extract and process commands
-                std::vector<std::string> commands = extract_commands(client_ctx->ctx.read_buffer);
+                // Extract and process RESP commands
+                std::string parse_error;
+                std::vector<std::vector<std::string>> resp_commands = extract_resp_commands(client_ctx->ctx.parser, &parse_error);
+                
+                // If we got a parse error and no commands, send error and log details
+                if (resp_commands.empty() && !parse_error.empty()) {
+                    // Log the parse error with buffer context for debugging
+                    mini_redis::Logger::log(mini_redis::Logger::Level::Warn, "RESP parse error (IOCP): " + parse_error);
+                    std::string error_reply = resp_err(parse_error);
+                    client_ctx->write_buffer += error_reply;
+                    // Post write if we have data, otherwise post next read
+                    // Don't clear buffer - allows connection to recover if next command is valid
+                    if (!client_ctx->write_buffer.empty()) {
+                        post_write(client_ctx);
+                    } else {
+                        post_read(client_ctx);
+                    }
+                    goto next_operation;
+                }
                 
                 // Process each command
-                for (const auto& cmd_line : commands) {
-                    protocol::Command cmd = protocol::parse_command(cmd_line);
+                for (const auto& resp_array : resp_commands) {
+                    // Convert RESP array to Command struct
+                    protocol::Command cmd = protocol::command_from_resp_array(resp_array);
+                    
+                    // Handle parse errors
+                    if (cmd.type == protocol::CommandType::UNKNOWN && !resp_array.empty()) {
+                        std::string error_reply = resp_err("ERR unknown command '" + resp_array[0] + "'");
+                        client_ctx->write_buffer += error_reply;
+                        continue;
+                    }
+                    
                     mini_redis::detail::CommandResult result = process_command(cmd, client_ctx->ctx, client_ctx->socket);
                     
                     // Accumulate reply

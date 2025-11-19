@@ -2,12 +2,14 @@
 // CPU-side tests only, no networking dependencies
 
 #include "../src/protocol/parser.hpp"
+#include "../src/protocol/resp_parser.hpp"
 #include "../src/storage/kv_store.hpp"
 #include <cassert>
 #include <iostream>
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <cstring>
 
 void test_parser() {
     std::cout << "Testing parser...\n";
@@ -63,6 +65,115 @@ void test_parser() {
     assert(cmd.type == protocol::CommandType::UNKNOWN);
 
     std::cout << "Parser tests passed!\n";
+}
+
+void test_resp_parser() {
+    std::cout << "Testing RESP parser...\n";
+
+    // Test 1: Simple PING command - *1\r\n$4\r\nPING\r\n
+    {
+        RespParser parser;
+        const char* data = "*1\r\n$4\r\nPING\r\n";
+        parser.append(data, strlen(data));
+        RespResult result = parser.parse();
+        assert(result.complete);
+        assert(result.error.empty());
+        assert(result.command.size() == 1);
+        assert(result.command[0] == "PING");
+    }
+
+    // Test 2: SET command - *3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n
+    {
+        RespParser parser;
+        const char* data = "*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n";
+        parser.append(data, strlen(data));
+        RespResult result = parser.parse();
+        assert(result.complete);
+        assert(result.error.empty());
+        assert(result.command.size() == 3);
+        assert(result.command[0] == "SET");
+        assert(result.command[1] == "key");
+        assert(result.command[2] == "value");
+    }
+
+    // Test 3: GET command - *2\r\n$3\r\nGET\r\n$3\r\nkey\r\n
+    {
+        RespParser parser;
+        const char* data = "*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n";
+        parser.append(data, strlen(data));
+        RespResult result = parser.parse();
+        assert(result.complete);
+        assert(result.error.empty());
+        assert(result.command.size() == 2);
+        assert(result.command[0] == "GET");
+        assert(result.command[1] == "key");
+    }
+
+    // Test 4: Empty array
+    {
+        RespParser parser;
+        const char* data = "*0\r\n";
+        parser.append(data, strlen(data));
+        RespResult result = parser.parse();
+        assert(result.complete);
+        assert(result.error.empty());
+        assert(result.command.empty());
+    }
+
+    // Test 5: Incomplete command (should return incomplete)
+    {
+        RespParser parser;
+        const char* data = "*1\r\n$4\r\nPIN"; // Missing G\r\n
+        parser.append(data, strlen(data));
+        RespResult result = parser.parse();
+        assert(!result.complete);
+        assert(result.error.empty());
+    }
+
+    // Test 6: Multiple commands in one buffer (pipelining)
+    {
+        RespParser parser;
+        const char* data = "*1\r\n$4\r\nPING\r\n*1\r\n$4\r\nPING\r\n";
+        parser.append(data, strlen(data));
+        RespResult result1 = parser.parse();
+        assert(result1.complete);
+        assert(result1.error.empty());
+        assert(result1.command.size() == 1);
+        assert(result1.command[0] == "PING");
+        
+        // Parse second command
+        RespResult result2 = parser.parse();
+        assert(result2.complete);
+        assert(result2.error.empty());
+        assert(result2.command.size() == 1);
+        assert(result2.command[0] == "PING");
+    }
+
+    // Test 7: Command name case conversion (should be uppercase)
+    {
+        RespParser parser;
+        const char* data = "*1\r\n$4\r\nping\r\n";
+        parser.append(data, strlen(data));
+        RespResult result = parser.parse();
+        assert(result.complete);
+        assert(result.error.empty());
+        assert(result.command.size() == 1);
+        assert(result.command[0] == "PING"); // Should be converted to uppercase
+    }
+
+    // Test 8: Nil bulk string
+    {
+        RespParser parser;
+        const char* data = "*1\r\n$-1\r\n";
+        parser.append(data, strlen(data));
+        RespResult result = parser.parse();
+        assert(result.complete);
+        assert(result.error.empty());
+        assert(result.command.size() == 1);
+        assert(result.command[0].empty()); // Nil bulk string should be empty
+    }
+
+    std::cout << "RESP parser tests passed!\n";
 }
 
 void test_kvstore() {
@@ -133,6 +244,7 @@ int main() {
     
     try {
         test_parser();
+        test_resp_parser();
         test_kvstore();
         std::cout << "\nAll tests passed!\n";
         return 0;

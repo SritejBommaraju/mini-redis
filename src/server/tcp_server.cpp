@@ -15,6 +15,7 @@
 #include "utils/logger.hpp"
 
 #include "../protocol/parser.hpp"
+#include "../protocol/resp_parser.hpp"
 #include "../storage/kv_store.hpp"
 #include "../storage/aof_logger.hpp"
 #include "replication.hpp"
@@ -92,6 +93,18 @@ std::mutex mini_redis::detail::channels_mutex; // Protects channel subscriptions
 time_t mini_redis::detail::server_start_time = time(nullptr);
 std::atomic<long long> mini_redis::detail::total_commands_processed{0};
 
+// ClientContext constructor/destructor implementations
+mini_redis::detail::ClientContext::ClientContext() {
+    parser = new RespParser();
+}
+
+mini_redis::detail::ClientContext::~ClientContext() {
+    if (parser) {
+        delete parser;
+        parser = nullptr;
+    }
+}
+
 // Get current database for a client - made accessible for IOCP server
 KVStore& get_db(mini_redis::detail::ClientContext& ctx) {
     std::lock_guard<std::mutex> lock(mini_redis::detail::databases_mutex);
@@ -101,45 +114,41 @@ KVStore& get_db(mini_redis::detail::ClientContext& ctx) {
     return mini_redis::detail::databases[ctx.db_index];
 }
 
-// Extract complete commands from buffer (lines ending with \r\n or \n)
-// Returns vector of complete command strings and updates buffer with remaining partial data
+// Extract complete RESP commands using the parser in ClientContext
+// Returns vector of parsed command arrays and error message if any
 // Made accessible for IOCP server
-std::vector<std::string> extract_commands(std::string& buffer) {
-    std::vector<std::string> commands;
+std::vector<std::vector<std::string>> extract_resp_commands(RespParser* parser, std::string* error_msg = nullptr) {
+    std::vector<std::vector<std::string>> commands;
     
-    size_t pos = 0;
-    while (pos < buffer.length()) {
-        // Look for line ending (\r\n or \n)
-        size_t crlf = buffer.find("\r\n", pos);
-        size_t lf = buffer.find("\n", pos);
+    if (!parser) {
+        if (error_msg) {
+            *error_msg = "ERR parser not initialized";
+        }
+        return commands;
+    }
+    
+    // Parse all complete RESP commands
+    while (true) {
+        RespResult result = parser->parse();
         
-        size_t line_end;
-        if (crlf != std::string::npos && (lf == std::string::npos || crlf < lf)) {
-            line_end = crlf;
-        } else if (lf != std::string::npos) {
-            line_end = lf;
-        } else {
-            // No line ending found - partial command, keep in buffer
+        if (!result.complete) {
+            // Incomplete - need more data
             break;
         }
         
-        // Extract complete command line
-        std::string cmd = buffer.substr(pos, line_end - pos);
-        if (!cmd.empty()) {
-            commands.push_back(cmd);
+        if (!result.error.empty()) {
+            // Parse error
+            if (error_msg) {
+                *error_msg = result.error;
+            }
+            break;
         }
         
-        // Move past line ending
-        if (crlf != std::string::npos && crlf == line_end) {
-            pos = line_end + 2; // Skip \r\n
-        } else {
-            pos = line_end + 1; // Skip \n
+        // Got a complete command
+        if (!result.command.empty()) {
+            commands.push_back(std::move(result.command));
         }
-    }
-    
-    // Remove processed data from buffer, keep partial command
-    if (pos > 0) {
-        buffer = buffer.substr(pos);
+        // Continue parsing (may have multiple commands pipelined)
     }
     
     return commands;
@@ -458,19 +467,42 @@ void handle_client(SOCKET client_socket) {
             break;
         }
 
-        // Append new data to client's read buffer (handles partial commands)
-        ctx.read_buffer.append(buffer, bytes);
+        // Append new data to parser (handles partial commands)
+        // Note: parser maintains its own buffer and handles binary data correctly
+        if (ctx.parser) {
+            ctx.parser->append(buffer, bytes);
+        }
 
 #ifdef DEBUG_LOGGING
-        mini_redis::Logger::log(mini_redis::Logger::Level::Info, "Received " + std::to_string(bytes) + " bytes, buffer size: " + std::to_string(ctx.read_buffer.size()));
+        mini_redis::Logger::log(mini_redis::Logger::Level::Info, "Received " + std::to_string(bytes) + " bytes");
 #endif
 
-        // Extract all complete commands from buffer
-        std::vector<std::string> commands = extract_commands(ctx.read_buffer);
+        // Extract all complete RESP commands from parser
+        std::string parse_error;
+        std::vector<std::vector<std::string>> resp_commands = extract_resp_commands(ctx.parser, &parse_error);
+        
+        // If we got a parse error and no commands, send error and log details
+        if (resp_commands.empty() && !parse_error.empty()) {
+            // Log the parse error with buffer context for debugging
+            mini_redis::Logger::log(mini_redis::Logger::Level::Warn, "RESP parse error: " + parse_error);
+            std::string error_reply = resp_err(parse_error);
+            send(client_socket, error_reply.c_str(), static_cast<int>(error_reply.size()), 0);
+            // Don't clear buffer here - let it accumulate more data or close connection naturally
+            // This allows the connection to recover if the next command is valid
+            continue; // Skip to next recv
+        }
 
         // Process each complete command
-        for (const auto& cmd_line : commands) {
-            protocol::Command cmd = protocol::parse_command(cmd_line);
+        for (const auto& resp_array : resp_commands) {
+            // Convert RESP array to Command struct
+            protocol::Command cmd = protocol::command_from_resp_array(resp_array);
+            
+            // Handle parse errors
+            if (cmd.type == protocol::CommandType::UNKNOWN && !resp_array.empty()) {
+                std::string error_reply = resp_err("ERR unknown command '" + resp_array[0] + "'");
+                send(client_socket, error_reply.c_str(), static_cast<int>(error_reply.size()), 0);
+                continue;
+            }
             
             mini_redis::detail::CommandResult result = process_command(cmd, ctx, client_socket);
             
@@ -589,3 +621,4 @@ int start_server(int port) {
 }
 
 } // namespace mini_redis
+

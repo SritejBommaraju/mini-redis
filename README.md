@@ -88,9 +88,43 @@ mini-redis/
    .\Release\mini_redis.exe
    ```
 
-Or use the provided PowerShell script:
+Or use the provided PowerShell scripts:
 ```powershell
+# Build script (automatically stops running processes)
+.\build.ps1
+
+# Start server script
 .\start_server.ps1
+```
+
+### Troubleshooting Build Issues
+
+#### Linker Error: "cannot open mini_redis.exe for writing" (LNK1168)
+
+This error occurs when `mini_redis.exe` is currently running and the linker cannot overwrite it. Solutions:
+
+**Option 1: Use the build script (recommended)**
+```powershell
+.\build.ps1
+```
+The script automatically detects and stops running processes before building.
+
+**Option 2: Manual process management**
+```powershell
+# Check for running processes
+Get-Process mini_redis -ErrorAction SilentlyContinue
+
+# Stop the process
+Stop-Process -Name mini_redis -Force
+
+# Then retry the build
+cd build
+nmake
+```
+
+**Option 3: Force kill with build script**
+```powershell
+.\build.ps1 -Force
 ```
 
 ## Running the Server

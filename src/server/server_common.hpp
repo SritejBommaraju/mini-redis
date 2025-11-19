@@ -20,6 +20,9 @@
 
 class KVStore;
 
+// Forward declaration - include resp_parser.hpp where RespParser is used
+class RespParser;
+
 namespace mini_redis {
 namespace detail {
 
@@ -29,7 +32,23 @@ struct ClientContext {
     bool authenticated = false; // Authentication status (stub: always true for now)
     int request_count = 0; // Number of requests processed
     std::set<std::string> subscribed_channels; // Channels this client is subscribed to
-    std::string read_buffer; // Buffer for accumulating partial commands across TCP reads
+    RespParser* parser = nullptr; // RESP parser instance (owned by this context)
+    
+    // Constructor/destructor implemented in .cpp files (need full RespParser definition)
+    ClientContext();
+    ~ClientContext();
+    
+    // Non-copyable (parser ownership)
+    ClientContext(const ClientContext&) = delete;
+    ClientContext& operator=(const ClientContext&) = delete;
+    
+    // Movable
+    ClientContext(ClientContext&& other) noexcept 
+        : db_index(other.db_index), authenticated(other.authenticated),
+          request_count(other.request_count), subscribed_channels(std::move(other.subscribed_channels)),
+          parser(other.parser) {
+        other.parser = nullptr;
+    }
 };
 
 // Process a single command and return reply and quit flag
