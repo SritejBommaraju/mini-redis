@@ -36,6 +36,12 @@
 *.exe
 *.out
 *.app
+test_protocol
+
+# Data files
+*.db
+*.rdb
+*.aof
 
 # debug information files
 *.dwo

@@ -28,7 +28,9 @@ namespace protocol {
         SUBSCRIBE,
         PUBLISH,
         EVAL,
-        AUTH
+        AUTH,
+        HSET,
+        HGET
     };
 
     struct Command {

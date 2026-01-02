@@ -15,7 +15,12 @@
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #else
-#error "This implementation currently supports only Windows (Winsock)."
+// Mock SOCKET for non-Windows builds (e.g. testing on Linux)
+typedef int SOCKET;
+#define INVALID_SOCKET -1
+#define SOCKET_ERROR -1
+// Forward declare send for Linux builds (usually in sys/socket.h, but we are keeping it simple or mocking)
+int send(SOCKET s, const char* buf, int len, int flags);
 #endif
 
 class KVStore;

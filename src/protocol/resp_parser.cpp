@@ -49,7 +49,7 @@ RespResult RespParser::parse() {
         return RespResult(false, {}, "");
     
     int count = std::stoi(*countLine);
-    if (count <= 0)
+    if (count < 0)
         return RespResult(true, {}, "ERR invalid array length");
     
     std::vector<std::string> elements;
