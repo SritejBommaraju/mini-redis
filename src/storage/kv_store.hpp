@@ -27,6 +27,14 @@ public:
     bool save_to_rdb(const std::string& filename) const;
     bool load_from_rdb(const std::string& filename);
 
+    // Type checking
+    enum class KeyType { None, String, Hash };
+    KeyType type(const std::string& key);
+
+    // Hash operations
+    int hset(const std::string& key, const std::string& field, const std::string& value);
+    bool hget(const std::string& key, const std::string& field, std::string& outValue);
+
 private:
     // Check if key is expired and remove it if so (must be called with lock held)
     void check_and_remove_expired(const std::string& key);
@@ -36,6 +44,7 @@ private:
     void evict_if_needed();
 
     std::unordered_map<std::string, std::string> store_;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::string>> hash_store_; // Key -> (Field -> Value)
     std::unordered_map<std::string, time_t> expirations_; // Key -> expiration timestamp
     std::list<std::string> lru_order_; // Most recent at front, oldest at back
     std::unordered_map<std::string, std::list<std::string>::iterator> lru_map_; // Key -> position in lru_order_

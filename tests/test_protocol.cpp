@@ -236,6 +236,33 @@ void test_kvstore() {
     assert(kv2.get("persist_key", loaded_value));
     assert(loaded_value == "persist_value");
 
+    // Test Hashes
+    int is_new = kv.hset("myhash", "field1", "hvalue1");
+    assert(is_new == 1);
+
+    // Update existing field
+    is_new = kv.hset("myhash", "field1", "hvalue2");
+    assert(is_new == 0);
+
+    std::string hvalue;
+    assert(kv.hget("myhash", "field1", hvalue));
+    assert(hvalue == "hvalue2");
+    assert(!kv.hget("myhash", "nonexistent", hvalue));
+    assert(!kv.hget("nonexistent_hash", "field1", hvalue));
+
+    // Test RDB Persistence for Hashes
+    kv.save_to_rdb("test_dump.rdb");
+
+    KVStore kv3;
+    kv3.load_from_rdb("test_dump.rdb");
+    std::string hloaded;
+    assert(kv3.hget("myhash", "field1", hloaded));
+    assert(hloaded == "hvalue2");
+
+    // Cleanup
+    remove("test_dump.db");
+    remove("test_dump.rdb");
+
     std::cout << "KVStore tests passed!\n";
 }
 

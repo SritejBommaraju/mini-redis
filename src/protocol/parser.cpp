@@ -73,6 +73,8 @@ namespace protocol {
         else if (name == "PUBLISH") cmd.type = CommandType::PUBLISH;
         else if (name == "EVAL") cmd.type = CommandType::EVAL;
         else if (name == "AUTH") cmd.type = CommandType::AUTH;
+        else if (name == "HSET") cmd.type = CommandType::HSET;
+        else if (name == "HGET") cmd.type = CommandType::HGET;
         else cmd.type = CommandType::UNKNOWN;
 
         if (tokens.size() > 1)
@@ -111,6 +113,8 @@ namespace protocol {
         else if (name == "PUBLISH") cmd.type = CommandType::PUBLISH;
         else if (name == "EVAL") cmd.type = CommandType::EVAL;
         else if (name == "AUTH") cmd.type = CommandType::AUTH;
+        else if (name == "HSET") cmd.type = CommandType::HSET;
+        else if (name == "HGET") cmd.type = CommandType::HGET;
         else cmd.type = CommandType::UNKNOWN;
         
         // Copy remaining elements as args
