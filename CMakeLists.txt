@@ -37,7 +37,9 @@ target_link_libraries(mini_redis PRIVATE Threads::Threads)
 # Unit tests target (CPU-side only, no networking)
 file(GLOB_RECURSE TEST_SOURCES "tests/*.cpp")
 if (TEST_SOURCES)
-    add_executable(mini_redis_tests ${TEST_SOURCES})
+    # Filter out main.cpp from SOURCES
+    list(FILTER SOURCES EXCLUDE REGEX "main.cpp$")
+    add_executable(mini_redis_tests ${TEST_SOURCES} ${SOURCES})
     target_link_libraries(mini_redis_tests PRIVATE Threads::Threads)
     # Exclude main.cpp from test executable
     set_target_properties(mini_redis_tests PROPERTIES

@@ -323,3 +323,69 @@ bool KVStore::load_from_rdb(const std::string& filename) {
     evict_if_needed();
     return true;
 }
+
+std::pair<int64_t, std::string> KVStore::incrby(const std::string& key, int64_t delta) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    check_and_remove_expired(key);
+    
+    int64_t current = 0;
+    auto it = store_.find(key);
+    if (it != store_.end()) {
+        // Parse existing value
+        try {
+            size_t pos = 0;
+            current = std::stoll(it->second, &pos);
+            if (pos != it->second.size()) {
+                return {0, "ERR value is not an integer"};
+            }
+        } catch (...) {
+            return {0, "ERR value is not an integer"};
+        }
+    }
+    
+    int64_t result = current + delta;
+    store_[key] = std::to_string(result);
+    update_lru(key);
+    evict_if_needed();
+    return {result, ""};
+}
+
+std::pair<int64_t, std::string> KVStore::incr(const std::string& key) {
+    return incrby(key, 1);
+}
+
+std::pair<int64_t, std::string> KVStore::decr(const std::string& key) {
+    return incrby(key, -1);
+}
+
+std::pair<int64_t, std::string> KVStore::decrby(const std::string& key, int64_t delta) {
+    return incrby(key, -delta);
+}
+
+size_t KVStore::append(const std::string& key, const std::string& value) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    check_and_remove_expired(key);
+    
+    auto it = store_.find(key);
+    if (it == store_.end()) {
+        store_[key] = value;
+        update_lru(key);
+        evict_if_needed();
+        return value.size();
+    }
+    
+    it->second += value;
+    update_lru(key);
+    return it->second.size();
+}
+
+size_t KVStore::strlen(const std::string& key) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    check_and_remove_expired(key);
+    
+    auto it = store_.find(key);
+    if (it == store_.end()) {
+        return 0;
+    }
+    return it->second.size();
+}

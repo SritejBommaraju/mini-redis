@@ -239,6 +239,12 @@ void test_kvstore() {
     std::cout << "KVStore tests passed!\n";
 }
 
+// Forward declaration for atomic command tests
+extern void run_atomic_command_tests();
+
+// Forward declaration for config tests
+extern void run_config_tests();
+
 int main() {
     std::cout << "Running Mini-Redis unit tests...\n\n";
     
@@ -246,6 +252,8 @@ int main() {
         test_parser();
         test_resp_parser();
         test_kvstore();
+        run_atomic_command_tests();
+        run_config_tests();
         std::cout << "\nAll tests passed!\n";
         return 0;
     } catch (const std::exception& e) {
@@ -253,4 +261,6 @@ int main() {
         return 1;
     }
 }
+
+
 

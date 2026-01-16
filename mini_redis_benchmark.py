@@ -36,6 +36,24 @@ SINGLE_CLIENT_OPS = 50_000
 MULTI_CLIENT_COUNT = 5
 MULTI_CLIENT_OPS_PER_CLIENT = 20_000
 
+# CLI support
+import argparse
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Mini-Redis benchmark and validation')
+    parser.add_argument('--host', default=SERVER_HOST, help='Server host')
+    parser.add_argument('--port', type=int, default=SERVER_PORT, help='Server port')
+    parser.add_argument('--correctness-only', action='store_true', help='Run only correctness tests')
+    parser.add_argument('--compare-modes', action='store_true', 
+                        help='Compare thread-per-client vs IOCP (requires manual server restart)')
+    parser.add_argument('--single-ops', type=int, default=SINGLE_CLIENT_OPS, 
+                        help='Operations for single-client benchmark')
+    parser.add_argument('--multi-clients', type=int, default=MULTI_CLIENT_COUNT,
+                        help='Number of concurrent clients')
+    parser.add_argument('--multi-ops', type=int, default=MULTI_CLIENT_OPS_PER_CLIENT,
+                        help='Operations per client in multi-client benchmark')
+    return parser.parse_args()
+
 
 # ============================================================================
 # Utility Functions
@@ -535,21 +553,17 @@ def print_summary_table(results: List[dict]):
 # Main Function
 # ============================================================================
 
-async def main():
-    """Main function to run all tests and benchmarks."""
-    print(f"{BOLD}{GREEN}")
-    print("=" * 60)
-    print("  Mini-Redis Benchmark and Validation Script")
-    print("=" * 60)
-    print(f"{RESET}")
+async def run_benchmark(args):
+    """Run benchmark with given configuration."""
+    host = args.host
+    port = args.port
     
-    # Connect to server
-    print(f"Connecting to {SERVER_HOST}:{SERVER_PORT}...")
-    client = MiniRedisClient()
+    print(f"\nConnecting to {host}:{port}...")
+    client = MiniRedisClient(host, port)
     
     if not await client.connect():
-        print(f"{RED}Failed to connect to server. Make sure it's running on {SERVER_HOST}:{SERVER_PORT}{RESET}")
-        sys.exit(1)
+        print(f"{RED}Failed to connect to server. Make sure it's running on {host}:{port}{RESET}")
+        return None
     
     print(f"{GREEN}Connected!{RESET}\n")
     
@@ -562,37 +576,74 @@ async def main():
         # Check if all tests passed
         all_passed = all(passed for _, passed in correctness_results)
         if not all_passed:
-            print(f"{YELLOW}Warning: Some correctness tests failed. Continuing with benchmarks...{RESET}\n")
+            print(f"{YELLOW}Warning: Some correctness tests failed.{RESET}\n")
+        
+        if args.correctness_only:
+            await client.close()
+            return benchmark_results
         
         # Run single-client benchmark
-        single_result = await benchmark_single_client(client)
+        single_result = await benchmark_single_client(client, args.single_ops)
         benchmark_results.append(single_result)
         
         # Close client before multi-client benchmark
         await client.close()
         
         # Run multi-client benchmark
-        multi_result = await benchmark_multi_client()
+        multi_result = await benchmark_multi_client(args.multi_clients, args.multi_ops)
         benchmark_results.append(multi_result)
         
-        # Write CSV
-        write_csv_results(benchmark_results)
+        return benchmark_results
         
-        # Print summary
-        print_summary_table(benchmark_results)
+    except Exception as e:
+        print(f"{RED}Error: {e}{RESET}")
+        await client.close()
+        return None
+
+
+async def main():
+    """Main function to run all tests and benchmarks."""
+    args = parse_args()
+    
+    print(f"{BOLD}{GREEN}")
+    print("=" * 60)
+    print("  Mini-Redis Benchmark and Validation Script")
+    print("=" * 60)
+    print(f"{RESET}")
+    
+    if args.compare_modes:
+        print(f"{BOLD}Server Mode Comparison{RESET}")
+        print("This will run benchmarks against the current server.")
+        print("After results, restart server with --iocp flag and run again.\n")
+    
+    all_results = []
+    
+    try:
+        results = await run_benchmark(args)
+        if results:
+            all_results.extend(results)
+        
+        if all_results:
+            # Write CSV
+            write_csv_results(all_results)
+            
+            # Print summary
+            print_summary_table(all_results)
         
         print(f"{BOLD}{GREEN}Benchmark complete!{RESET}\n")
         
+        if args.compare_modes:
+            print(f"{YELLOW}To compare with IOCP mode:{RESET}")
+            print("  1. Stop the current server")
+            print("  2. Start with: .\\mini_redis.exe --iocp")
+            print("  3. Run this script again with --compare-modes\n")
+        
     except KeyboardInterrupt:
         print(f"\n{YELLOW}Benchmark interrupted by user{RESET}")
-        await client.close()
-        sys.exit(1)
-    except Exception as e:
-        print(f"{RED}Unexpected error: {e}{RESET}")
-        await client.close()
         sys.exit(1)
 
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 

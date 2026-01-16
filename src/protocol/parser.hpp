@@ -28,7 +28,13 @@ namespace protocol {
         SUBSCRIBE,
         PUBLISH,
         EVAL,
-        AUTH
+        AUTH,
+        INCR,
+        DECR,
+        INCRBY,
+        DECRBY,
+        APPEND,
+        STRLEN
     };
 
     struct Command {

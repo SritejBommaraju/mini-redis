@@ -14,6 +14,7 @@
 #include "server/tcp_server.hpp"
 #include "utils/logger.hpp"
 
+#include "../protocol/resp_utils.hpp"
 #include "../protocol/parser.hpp"
 #include "../protocol/resp_parser.hpp"
 #include "../storage/kv_store.hpp"
@@ -34,38 +35,6 @@
 #include "server/server_common.hpp"
 
 namespace mini_redis {
-
-// RESP helpers (accessible to process_command and handle_client)
-std::string resp_simple(const std::string &msg) {
-    return "+" + msg + "\r\n";
-}
-
-std::string resp_bulk(const std::string &msg) {
-    return "$" + std::to_string(msg.size()) + "\r\n" + msg + "\r\n";
-}
-
-std::string resp_nil() {
-    return "$-1\r\n";
-}
-
-// RESP integer reply: returns ":1\r\n" for true/1, ":0\r\n" for false/0
-std::string resp_integer(int value) {
-    return ":" + std::to_string(value) + "\r\n";
-}
-
-// RESP array serialization: encodes items as "*<count>\r\n" followed by bulk strings
-// Each item is encoded as "$<len>\r\n<value>\r\n"
-std::string resp_array(const std::vector<std::string>& items) {
-    std::string result = "*" + std::to_string(items.size()) + "\r\n";
-    for (const auto& item : items) {
-        result += "$" + std::to_string(item.size()) + "\r\n" + item + "\r\n";
-    }
-    return result;
-}
-
-std::string resp_err(const std::string &msg) {
-    return "-" + msg + "\r\n";
-}
 
 namespace {
 
@@ -443,6 +412,104 @@ mini_redis::detail::CommandResult process_command(const protocol::Command& cmd, 
 
         case protocol::CommandType::AUTH:
             // Already handled above
+            break;
+
+        case protocol::CommandType::INCR:
+            if (cmd.args.empty()) {
+                result.reply = resp_err("ERR INCR requires a key");
+                result.success = false;
+            } else {
+                auto [val, err] = kv.incr(cmd.args[0]);
+                if (!err.empty()) {
+                    result.reply = resp_err(err);
+                    result.success = false;
+                } else {
+                    result.reply = resp_integer64(val);
+                    result.success = true;
+                }
+            }
+            break;
+
+        case protocol::CommandType::DECR:
+            if (cmd.args.empty()) {
+                result.reply = resp_err("ERR DECR requires a key");
+                result.success = false;
+            } else {
+                auto [val, err] = kv.decr(cmd.args[0]);
+                if (!err.empty()) {
+                    result.reply = resp_err(err);
+                    result.success = false;
+                } else {
+                    result.reply = resp_integer64(val);
+                    result.success = true;
+                }
+            }
+            break;
+
+        case protocol::CommandType::INCRBY:
+            if (cmd.args.size() < 2) {
+                result.reply = resp_err("ERR INCRBY requires key and increment");
+                result.success = false;
+            } else {
+                try {
+                    int64_t delta = std::stoll(cmd.args[1]);
+                    auto [val, err] = kv.incrby(cmd.args[0], delta);
+                    if (!err.empty()) {
+                        result.reply = resp_err(err);
+                        result.success = false;
+                    } else {
+                        result.reply = resp_integer64(val);
+                        result.success = true;
+                    }
+                } catch (...) {
+                    result.reply = resp_err("ERR value is not an integer");
+                    result.success = false;
+                }
+            }
+            break;
+
+        case protocol::CommandType::DECRBY:
+            if (cmd.args.size() < 2) {
+                result.reply = resp_err("ERR DECRBY requires key and decrement");
+                result.success = false;
+            } else {
+                try {
+                    int64_t delta = std::stoll(cmd.args[1]);
+                    auto [val, err] = kv.decrby(cmd.args[0], delta);
+                    if (!err.empty()) {
+                        result.reply = resp_err(err);
+                        result.success = false;
+                    } else {
+                        result.reply = resp_integer64(val);
+                        result.success = true;
+                    }
+                } catch (...) {
+                    result.reply = resp_err("ERR value is not an integer");
+                    result.success = false;
+                }
+            }
+            break;
+
+        case protocol::CommandType::APPEND:
+            if (cmd.args.size() < 2) {
+                result.reply = resp_err("ERR APPEND requires key and value");
+                result.success = false;
+            } else {
+                size_t newlen = kv.append(cmd.args[0], cmd.args[1]);
+                result.reply = resp_integer(static_cast<int>(newlen));
+                result.success = true;
+            }
+            break;
+
+        case protocol::CommandType::STRLEN:
+            if (cmd.args.empty()) {
+                result.reply = resp_err("ERR STRLEN requires a key");
+                result.success = false;
+            } else {
+                size_t len = kv.strlen(cmd.args[0]);
+                result.reply = resp_integer(static_cast<int>(len));
+                result.success = true;
+            }
             break;
 
         default:

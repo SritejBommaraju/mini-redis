@@ -27,7 +27,7 @@ if ($processes) {
         Write-Host "Processes stopped." -ForegroundColor Green
     } else {
         $response = Read-Host "Stop running processes? (Y/N)"
-        if ($response -eq "Y" -or $response -eq "y") {
+        if ($response -eq "Y" -or $response -eq "y") {f
             Stop-Process -Name "mini_redis" -Force -ErrorAction SilentlyContinue
             Start-Sleep -Milliseconds 500
             Write-Host "Processes stopped." -ForegroundColor Green

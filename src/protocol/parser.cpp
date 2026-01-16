@@ -73,6 +73,12 @@ namespace protocol {
         else if (name == "PUBLISH") cmd.type = CommandType::PUBLISH;
         else if (name == "EVAL") cmd.type = CommandType::EVAL;
         else if (name == "AUTH") cmd.type = CommandType::AUTH;
+        else if (name == "INCR") cmd.type = CommandType::INCR;
+        else if (name == "DECR") cmd.type = CommandType::DECR;
+        else if (name == "INCRBY") cmd.type = CommandType::INCRBY;
+        else if (name == "DECRBY") cmd.type = CommandType::DECRBY;
+        else if (name == "APPEND") cmd.type = CommandType::APPEND;
+        else if (name == "STRLEN") cmd.type = CommandType::STRLEN;
         else cmd.type = CommandType::UNKNOWN;
 
         if (tokens.size() > 1)
@@ -111,6 +117,12 @@ namespace protocol {
         else if (name == "PUBLISH") cmd.type = CommandType::PUBLISH;
         else if (name == "EVAL") cmd.type = CommandType::EVAL;
         else if (name == "AUTH") cmd.type = CommandType::AUTH;
+        else if (name == "INCR") cmd.type = CommandType::INCR;
+        else if (name == "DECR") cmd.type = CommandType::DECR;
+        else if (name == "INCRBY") cmd.type = CommandType::INCRBY;
+        else if (name == "DECRBY") cmd.type = CommandType::DECRBY;
+        else if (name == "APPEND") cmd.type = CommandType::APPEND;
+        else if (name == "STRLEN") cmd.type = CommandType::STRLEN;
         else cmd.type = CommandType::UNKNOWN;
         
         // Copy remaining elements as args

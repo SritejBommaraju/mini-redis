@@ -9,6 +9,8 @@
 #include <vector>
 #include <ctime>
 #include <list>
+#include <cstdint>
+#include <utility>
 
 class KVStore {
 public:
@@ -26,6 +28,16 @@ public:
     void load_from_file(const std::string& filename);
     bool save_to_rdb(const std::string& filename) const;
     bool load_from_rdb(const std::string& filename);
+
+    // Atomic counter commands
+    std::pair<int64_t, std::string> incr(const std::string& key);
+    std::pair<int64_t, std::string> decr(const std::string& key);
+    std::pair<int64_t, std::string> incrby(const std::string& key, int64_t delta);
+    std::pair<int64_t, std::string> decrby(const std::string& key, int64_t delta);
+
+    // String commands
+    size_t append(const std::string& key, const std::string& value);
+    size_t strlen(const std::string& key);
 
 private:
     // Check if key is expired and remove it if so (must be called with lock held)

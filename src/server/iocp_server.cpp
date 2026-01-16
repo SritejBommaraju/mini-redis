@@ -16,6 +16,7 @@
 #include "server/tcp_server.hpp"
 #include "utils/logger.hpp"
 
+#include "../protocol/resp_utils.hpp"
 #include "../protocol/parser.hpp"
 #include "../protocol/resp_parser.hpp"
 #include "../storage/kv_store.hpp"
@@ -43,35 +44,6 @@ mini_redis::detail::CommandResult process_command(const protocol::Command& cmd, 
 KVStore& get_db(mini_redis::detail::ClientContext& ctx);
 
 namespace {
-
-// RESP helpers (same as tcp_server.cpp)
-std::string resp_simple(const std::string &msg) {
-    return "+" + msg + "\r\n";
-}
-
-std::string resp_bulk(const std::string &msg) {
-    return "$" + std::to_string(msg.size()) + "\r\n" + msg + "\r\n";
-}
-
-std::string resp_nil() {
-    return "$-1\r\n";
-}
-
-std::string resp_integer(int value) {
-    return ":" + std::to_string(value) + "\r\n";
-}
-
-std::string resp_array(const std::vector<std::string>& items) {
-    std::string result = "*" + std::to_string(items.size()) + "\r\n";
-    for (const auto& item : items) {
-        result += "$" + std::to_string(item.size()) + "\r\n" + item + "\r\n";
-    }
-    return result;
-}
-
-std::string resp_err(const std::string &msg) {
-    return "-" + msg + "\r\n";
-}
 
 // IOCP client context: extends ClientContext with async I/O structures
 struct IOCPClientContext {
